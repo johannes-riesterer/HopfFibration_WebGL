@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js canvas - particles - waves</title>
+		<meta charset="utf-8">
+         <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+            <style>
+               body {
+                  background-color: #ffffff;
+                  margin: 0px;
+                  overflow: hidden;
+               }
+            
+            a {
+               color:#0078ff;
+            }
+            </style>
+            </head>
+          <div id="canvas"> </div>
+	<body>
+		
+      <script src="three.min.js"></script>
+      
+      
+      <script type="x-shader/x-vertex" id="vertexshader">
+         
+         uniform float a;
+         uniform float b;
+         uniform float c;
+         
+         attribute float phi;
+         
+         varying float colora;
+         varying float colorb;
+         varying float colorc;
+         varying vec3 potN;
+         
+         void main() {
+            colora = a;
+            colorb = b;
+            colorc = c;
+       
+            float theta = atan(-a/b) -phi;
+            float alpha = sqrt((1.0+c)/2.0);
+            float beta = sqrt((1.0-c)/2.0);
+            vec3 tmp = vec3(alpha *sin(theta), beta * cos(phi), beta * sin (phi));
+            float w = alpha * cos(theta);
+            float r = acos(w)/3.1415926;
+            float lambda = r/(1.0- (w*w));
+            vec3 aPosition = lambda* tmp;
+            potN = normalize(aPosition);
+            gl_PointSize = 3.5;
+            gl_Position = projectionMatrix * modelViewMatrix *vec4(aPosition,1.0);
+
+			}
+      
+      </script>
+      
+      
+		<script type="x-shader/x-fragment" id="fragmentshader">
+         
+         varying float colora;
+         varying float colorb;
+         varying float colorc;
+         
+         varying vec3 potN;
+
+      void main() {
+         
+         vec3 light = vec3(0.0,10.0,0.0);
+         light = normalize(light);
+         float dProd = max(0.1, dot(potN, light));
+         dProd *= 2.1;
+            gl_FragColor = vec4(dProd*abs(colora), dProd*abs(colorb), dProd*abs(colorc), 1.0);
+            
+			}
+      
+         </script>
+
+	
+      
+		<script>
+       
+         var container;
+			var camera, scene, renderer;
+			
+         
+         var uniforms = new Array();
+         var attributes = new Array();
+         var shaderMaterials = new Array();
+         
+         var fibers = new Array();
+         var fiberGeometry = new Array();
+         var fiberResolution = 1000;
+         
+         var curvePoints = new Array();
+         var curveSize = 300, curveStepsize =0.07;
+         
+         var step = 0.0;
+         var yDirection = 1.0;
+         var u = 1.0, v = 1.0;
+         
+         
+			init();
+			animate();
+         
+			function init() {
+            
+               //init scene and camera
+               container = document.getElementById( 'canvas' );
+               
+            
+               
+               camera = new THREE.PerspectiveCamera( 5, window.innerWidth / window.innerHeight, 10, 8000 );
+                  //camera.position.z =  -25;
+               camera.position.y =  40;
+
+               camera.lookAt(new THREE.Vector3(0,0,0));
+               
+               scene = new THREE.Scene();
+               scene.fog = new THREE.Fog( 0x000000, 2000, 3500 );
+      
+
+               //init points on base space S^2
+               var u= 0.5;
+               var v= 1.5;
+               var t = 0.0;
+               for (var i=0; i<curveSize; i++) {
+                  var a = Math.cos(t*u)*Math.sin(t*v);
+                  var b = Math.sin(t*u)*Math.sin(t*v);
+                  var c = Math.cos(t*v);
+                  curvePoints.push(new THREE.Vector3(a,b,c));
+                  t+= curveStepsize;
+               }
+               
+               
+               //init shaders for fibers
+               for (var i = 0; i< curvePoints.length; i++) {
+                  uniforms.push({
+                     a: {	type: 'f', value: 1.0 },
+                     b: {	type: 'f', value: 1.0 },
+                     c: {	type: 'f', value: 1.0 }
+                  });
+                  
+                  attributes.push ({
+                     phi: {	type: 'f', value: [] }
+                  });
+                  
+                  var material = new THREE.ShaderMaterial( {
+                                                          attributes:     attributes[i],
+                                                          uniforms:       uniforms[i],
+                                                          vertexShader:   document.getElementById( 'vertexshader' ).textContent,
+                                                          fragmentShader: document.getElementById( 'fragmentshader' ).textContent
+                                                          });
+                  shaderMaterials.push(material);
+
+               }
+            
+
+               // init fibers for each point on the curve
+               for (var i = 0; i< curvePoints.length; i++) {
+                  fiberGeometry.push (new  THREE.Geometry());
+                     for (var j = 0; j< fiberResolution; j++) {
+                        fiberGeometry[i].vertices.push(new THREE.Vertex(new THREE.Vector3(0,0,0)));
+                     }
+                     
+                      fibers.push (new THREE.ParticleSystem( fiberGeometry[i], shaderMaterials[i] ));
+                      scene.add( fibers[i] );
+               }
+         
+         
+            //update fibers
+            for(var i=0; i<curvePoints.length;i++) {
+               uniforms[i].a.value = curvePoints[i].x;
+               uniforms[i].b.value = curvePoints[i].y;
+               uniforms[i].c.value = curvePoints[i].z;
+               var t = 0.0;
+               for(var j=0; j<fiberResolution; j++){
+                  attributes[i].phi.value[j] = t;
+                  t+= 2*Math.PI/fiberResolution;
+               }
+               attributes[i].phi.needsUpdate = true;
+               uniforms[i].a.needsUpdate = true;
+               uniforms[i].b.needsUpdate = true;
+               uniforms[i].c.needsUpdate = true;
+            }
+         
+         
+         
+         renderer = new THREE.WebGLRenderer( { antialias: true, alpha: false } );
+         renderer.setClearColor( scene.fog.color, 1 );
+         renderer.setSize( 1440, 900);
+         
+         container.appendChild( renderer.domElement );
+         window.addEventListener( 'resize', onWindowResize, false );
+         
+      }
+      
+      function onWindowResize() {
+         
+         windowHalfX = window.innerWidth / 2;
+         windowHalfY = window.innerHeight / 2;
+         
+         camera.aspect = window.innerWidth / window.innerHeight;
+         camera.updateProjectionMatrix();
+         
+         renderer.setSize( window.innerWidth, window.innerHeight );
+         
+      }
+      
+			//
+         
+      function animate() {
+         requestAnimationFrame( animate );
+         updateHopf();
+         renderer.render( scene, camera );
+      }
+      
+      function updateHopf() {
+            //    var u= 1.0; var v= 1.0; //cool aber periodish....
+
+               step = 0.0;
+            for (var i=0; i<curvePoints.length; i++) {
+                  var a= Math.cos(step*u + yDirection )*Math.sin(step*v + yDirection);
+                  var b= Math.sin(step*u + yDirection)*Math.sin(step * v + yDirection);
+                  var c = Math.cos(step * v + yDirection);
+               
+               uniforms[i].a.value = a;
+               uniforms[i].b.value = b;
+               uniforms[i].c.value = c;
+               
+               uniforms[i].a.needsUpdate = true;
+               uniforms[i].b.needsUpdate = true;
+               uniforms[i].c.needsUpdate = true;
+               step+= curveStepsize;
+            }
+            yDirection += 0.001;
+            v = Math.cos(yDirection);
+
+
+      }
+      
+         </script>
+      
+	</body>
+</html>
